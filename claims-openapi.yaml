@@ -1,0 +1,18 @@
+openapi: 3.0.1
+servers:
+  - url: https://api.techno-import.example/claims/v1
+    description: Production
+  - url: https://test-api.techno-import.example/claims/v1
+    description: Test
+paths: {}
+components: {}
+x-original-swagger-version: '2.0'
+
+info:
+  title: Claim status
+  version: 1.0.0
+  description: API модуля претензионной работы. Позволяет переводить претензионное дело по статусам
+
+tags:
+  - name: Claims 
+    description: Работа с претензионными делами
