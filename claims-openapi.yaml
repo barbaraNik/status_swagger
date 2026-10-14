@@ -1,39 +1,255 @@
 openapi: 3.1.0
-⏳⏳⏳
 
 info:
-  title: Claim status
+  title: Статусы транзакций претензионных работ OpenApi спецификация
   version: 1.0.0-oas3.1-oas3-oas3.1
-  description: >-
-    API модуля претензионной работы. Позволяет переводить претензионное дело по
-    статусам
+  description: Смена статусов транзакций
 
 servers:
-  - url: https://api.techno-import.example/claims/v1
-    description: Production
-  - url: https://test-api.techno-import.example/claims/v1
-    description: Test
+  - url: https://api.technoimport.example/api/v1
+
+security:
+  - bearerAuth: []
+
 tags:
   - name: Claims
-    description: Работа с претензионными делами
+    description: Работа с претензионными статусамим и их обработкой
 
 paths:
-  /claims/{claimId}/transitions:
-    post:
+  /claims/statuses:
+    get:
       tags:
         - Claims
-      operationId: transitionClaimStatus
-      summary: Перевести претензионное дело в другой статус
-
-      parameters:
-        - name: claimId
-          in: path
-          required: true
-          description: Номер претензионного дела
-          schema:
-            type: string
-            pattern: '^CLM-\d{4}-\d{6}$'
-          example: CLM-2026-123456
+      operationId: getClaimsStatuses
+      summary: Справочник статусов
+      description: Возвращает все статусы претензионных дел
       responses:
         '200':
-          description: Статус успешно изменен
+          description: Список статусов успешно получен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusListResponse'
+                example:
+                  items:
+                    - status_name: Создан
+                      status_code: CREATED
+                    - status_name: В работе
+                      status_code: IN_PROGRESS
+                    - status_name: Направлено поставщику
+                      status_code: SENT
+                    - status_name: Ответ получен
+                      status_code: RESPONSE_RECEIVED
+                    - status_name: На согласовании
+                      status_code: UNDER_APPROVAL
+                    - status_name: Согласовано
+                      status_code: AGREED
+                    - status_name: Спор с поставщиком
+                      status_code: DISPUTE
+                    - status_name: Закрыта
+                      status_code: CLOSED
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /claims/{claimId}/status:
+    patch:
+      tags:
+        - Claims
+      operationId: changeClaimStatus
+      summary: Изменяет статус претензионного дела
+      description: Вызывается при выборе нового значения в колонке «Изменить статус». Каждое успешное изменение записывается в историю.
+      parameters:
+        - $ref: '#/components/parameters/ClaimId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeStatusRequest'
+      responses:
+        '200':
+          description: Статус успешно изменён, либо новый статус совпадает с текущим
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangeStatusResponse'
+        '400':
+          description: Некорректные параметры запроса или недопустимое значение status_code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schema/Error'
+        '401':
+          description: Отсутствует или недействителен токен авторизации
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Недостаточно прав для выполнения перехода
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schema/Error'
+        '404':
+          description: Претензионное дело не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schema/Error'
+        '409':
+          description: Переход отсутствует в бизнес логике
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schema/Error'
+        '422':
+          description: Переход допустим, но условие перехода не выполнено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schema/Error'
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/responses/InternalServerError'
+
+components:
+  parameters:
+    ClaimId:
+      name: claim_id
+      in: path
+      required: true
+      description: Номер претензионного дела
+      schema:
+        type: string
+        pattern: '^CLM-\d{4}-\d{6}$'
+        examples:
+          - CLM-2026-123457
+
+  schemas:
+    ClaimStatus:
+      type: object
+      required:
+        - status
+      properties:
+        status_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - CREATED
+            - IN_PROGRESS
+            - SENT
+            - RESPONSE_RECEIVED
+            - UNDER_APPROVAL
+            - AGREED
+            - DISPUTE
+            - CLOSED
+          description: Статус претензионного дела
+        changedAt:
+          type: string
+          format: date-time
+          example: '2026-10-10T15:00:00+01:00'
+
+    Error:
+      type: object
+      description: Формат ошибки
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+          description: Описание ошибки для пользователя
+
+    StatusListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Status'
+
+    Status:
+      type: object
+      description: Статус претензии
+      required:
+        - status_name
+        - status_code
+      properties:
+        status_name:
+          type: string
+          description: Название статуса
+          example:
+            - Создан
+        status_code:
+          $ref: '#/components/schema/StatusCode'
+
+    ChangeStatusRequest:
+      type: object
+      required:
+        - status_code
+      properties:
+        status_code:
+          $ref: '#/components/schemas/StatusCode'
+
+    ChangeStatusResponse:
+      type: object
+      required:
+        - claim_id
+        - status
+      properties:
+        claim_id:
+          type: string
+          description: Номер претензионного дела
+          examples:
+            - CLM-2026-123457
+        status:
+          allOf:
+            - $ref: '#/components/schemas/Status'
+            - type: object
+              required:
+                - changed_at
+              properties:
+                changed_at:
+                  type: string
+                  format: date-time
+                  description: Дата и время установки текущего статуса
+                  examples:
+                    - '2026-10-14T09:10:00+03:00'
+
+    StatusCode:
+      type: string
+      description: Код статуса претензионного дела
+      enum:
+        - CREATED
+        - IN_PROGRESS
+        - SENT
+        - RESPONSE_RECEIVED
+        - UNDER_APPROVAL
+        - AGREED
+        - DISPUTE
+        - CLOSED
+
+  responses:
+    Unauthorized:
+      description: Отсутствует или недействителен токен авторизации
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InternalServerError:
+      description: Внутренняя ошибка сервера
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
