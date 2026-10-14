@@ -4,10 +4,6 @@
 
 <img width="1892" height="900" alt="image" src="https://github.com/user-attachments/assets/ab24afdf-17a8-4524-a52f-b4cffd15ee7f" />
 
-### История изменения статусов
-
-<img width="965" height="889" alt="image" src="https://github.com/user-attachments/assets/ab3c4186-19ad-4131-bb79-1db01249c81f" />
-
 ## Авторизация
  
 Все методы требуют JWT-токен в заголовке:
@@ -248,6 +244,8 @@ Query parameters — отсутствуют.
 ---
  
 ### GET /claims/{claim_id}/history — история изменений статусов
+
+<img width="965" height="889" alt="image" src="https://github.com/user-attachments/assets/ab3c4186-19ad-4131-bb79-1db01249c81f" />
  
 Возвращает текущий статус дела и список изменений статусов: предыдущий и новый статус, сотрудник и время изменения. Вызывается при нажатии «Смотреть» в строке таблицы.
  
