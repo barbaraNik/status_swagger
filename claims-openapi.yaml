@@ -1,9 +1,12 @@
 openapi: 3.1.0
 
 info:
-  title: Статусы транзакций претензионных работ OpenApi спецификация
-  version: 1.0.0-oas3.1-oas3-oas3.1
-  description: Смена статусов транзакций
+  title: Претензионные дела — смена статусов API
+  version: 1.0.0
+  description: |
+    Справочник статусов и изменение статуса претензионного дела.
+    Описание статусов и матрица переходов:
+    https://github.com/barbaraNik/status_swagger/blob/main/status-names.md
 
 servers:
   - url: https://api.technoimport.example/api/v1
@@ -13,7 +16,7 @@ security:
 
 tags:
   - name: Claims
-    description: Работа с претензионными статусамим и их обработкой
+    description: Работа со статусами претензионных дел и их обработкой
 
 paths:
   /claims/statuses:
@@ -30,36 +33,62 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/StatusListResponse'
-                example:
-                  items:
-                    - status_name: Создан
-                      status_code: CREATED
-                    - status_name: В работе
-                      status_code: IN_PROGRESS
-                    - status_name: Направлено поставщику
-                      status_code: SENT
-                    - status_name: Ответ получен
-                      status_code: RESPONSE_RECEIVED
-                    - status_name: На согласовании
-                      status_code: UNDER_APPROVAL
-                    - status_name: Согласовано
-                      status_code: AGREED
-                    - status_name: Спор с поставщиком
-                      status_code: DISPUTE
-                    - status_name: Закрыта
-                      status_code: CLOSED
+              example:
+                items:
+                  - status_name: Создан
+                    status_code: CREATED
+                  - status_name: В работе
+                    status_code: IN_PROGRESS
+                  - status_name: Направлено поставщику
+                    status_code: SENT
+                  - status_name: Ответ получен
+                    status_code: RESPONSE_RECEIVED
+                  - status_name: На согласовании
+                    status_code: UNDER_APPROVAL
+                  - status_name: Согласовано
+                    status_code: AGREED
+                  - status_name: Спор с поставщиком
+                    status_code: DISPUTE
+                  - status_name: Закрыта
+                    status_code: CLOSED
         '401':
           $ref: '#/components/responses/Unauthorized'
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-  /claims/{claimId}/status:
+  /claims/{claim_id}/status:
     patch:
       tags:
         - Claims
       operationId: changeClaimStatus
       summary: Изменяет статус претензионного дела
-      description: Вызывается при выборе нового значения в колонке «Изменить статус». Каждое успешное изменение записывается в историю.
+      description: |
+        Вызывается при выборе нового значения в колонке «Изменить статус».
+        Каждое успешное изменение записывается в историю.
+
+        **Идемпотентность.** Если `status_code` совпадает с текущим статусом дела,
+        сервер возвращает `200 OK` с текущим состоянием, не добавляет запись
+        в историю и не изменяет `changed_at`.
+
+        **Порядок проверок:**
+        `400` (формат запроса) → `404` (дело не найдено) → `200` (статус совпадает с текущим)
+        → `409` (перехода нет в матрице) → `403` (нет роли) → `422` (условие не выполнено).
+
+        **Матрица переходов.** Любой переход, которого нет в таблице, → `409`.
+        Из конечного статуса `CLOSED` переходов нет.
+
+        | № | Откуда → куда | Роль (иначе 403) | Условие (иначе 422) |
+        |---|---|---|---|
+        | T1 | `CREATED` → `IN_PROGRESS` | Специалист ВЭД | — |
+        | T2 | `IN_PROGRESS` → `SENT` | Специалист ВЭД | Evidence Pack полный; обязательные поля Claim Letter заполнены; срок предъявления претензии по контракту не истёк |
+        | T3 | `SENT` → `RESPONSE_RECEIVED` | Специалист ВЭД | — |
+        | T4 | `RESPONSE_RECEIVED` → `UNDER_APPROVAL` | Специалист ВЭД | Ответ поставщика прикреплён |
+        | T5 | `UNDER_APPROVAL` → `AGREED` | Руководитель ВЭД | — |
+        | T6 | `UNDER_APPROVAL` → `DISPUTE` | Руководитель ВЭД | — |
+        | T7 | `AGREED` → `CLOSED` | Специалист ВЭД | Компенсация получена |
+        | T8 | `DISPUTE` → `CLOSED` | Юрист ВЭД | — |
+        | T9 | `CREATED` → `CLOSED` | Специалист ВЭД | — |
+        | T10 | `IN_PROGRESS` → `CLOSED` | Специалист ВЭД | — |
       parameters:
         - $ref: '#/components/parameters/ClaimId'
       requestBody:
@@ -68,6 +97,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/ChangeStatusRequest'
+            example:
+              status_code: UNDER_APPROVAL
       responses:
         '200':
           description: Статус успешно изменён, либо новый статус совпадает с текущим
@@ -75,50 +106,108 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ChangeStatusResponse'
+              example:
+                claim_id: CLM-2026-123457
+                status:
+                  status_name: На согласовании
+                  status_code: UNDER_APPROVAL
+                  changed_at: '2026-10-14T09:10:00+03:00'
         '400':
           description: Некорректные параметры запроса или недопустимое значение status_code
           content:
             application/json:
               schema:
-                $ref: '#/components/schema/Error'
+                $ref: '#/components/schemas/Error'
+              example:
+                code: VALIDATION_ERROR
+                message: Недопустимое значение status_code
         '401':
-          description: Отсутствует или недействителен токен авторизации
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/Unauthorized'
         '403':
-          description: Недостаточно прав для выполнения перехода
+          description: Недостаточно прав для выполнения перехода (роль из колонки «Роль» матрицы)
           content:
             application/json:
               schema:
-                $ref: '#/components/schema/Error'
+                $ref: '#/components/schemas/Error'
+              examples:
+                T5_wrong_role:
+                  summary: T5 — согласовать пытается специалист, а не руководитель ВЭД
+                  value:
+                    code: ROLE_NOT_ALLOWED
+                    message: Переход «На согласовании» → «Согласовано» доступен только руководителю ВЭД
+                T8_wrong_role:
+                  summary: T8 — закрыть спор пытается специалист, а не юрист ВЭД
+                  value:
+                    code: ROLE_NOT_ALLOWED
+                    message: Переход «Спор с поставщиком» → «Закрыта» доступен только юристу ВЭД
         '404':
           description: Претензионное дело не найдено
           content:
             application/json:
               schema:
-                $ref: '#/components/schema/Error'
+                $ref: '#/components/schemas/Error'
+              example:
+                code: CLAIM_NOT_FOUND
+                message: Претензионное дело CLM-2026-999999 не найдено
         '409':
-          description: Переход отсутствует в бизнес логике
+          description: Переход отсутствует в матрице переходов
           content:
             application/json:
               schema:
-                $ref: '#/components/schema/Error'
+                $ref: '#/components/schemas/Error'
+              examples:
+                skip_step:
+                  summary: Пропуск шага — SENT → AGREED
+                  value:
+                    code: TRANSITION_NOT_ALLOWED
+                    message: Переход «Направлено поставщику» → «Согласовано» недопустим
+                from_closed:
+                  summary: Выход из конечного статуса — CLOSED → IN_PROGRESS
+                  value:
+                    code: TRANSITION_NOT_ALLOWED
+                    message: Дело закрыто, изменение статуса невозможно
         '422':
-          description: Переход допустим, но условие перехода не выполнено
+          description: Переход есть в матрице, но условие перехода не выполнено
           content:
             application/json:
               schema:
-                $ref: '#/components/schema/Error'
+                $ref: '#/components/schemas/Error'
+              examples:
+                T2_evidence_pack:
+                  summary: T2 — Evidence Pack неполный
+                  value:
+                    code: EVIDENCE_PACK_INCOMPLETE
+                    message: Нельзя направить претензию поставщику — Evidence Pack заполнен не полностью
+                T2_claim_letter:
+                  summary: T2 — не заполнены обязательные поля Claim Letter
+                  value:
+                    code: CLAIM_LETTER_INCOMPLETE
+                    message: Нельзя направить претензию поставщику — не заполнены обязательные поля Claim Letter
+                T2_deadline:
+                  summary: T2 — истёк срок предъявления претензии
+                  value:
+                    code: CLAIM_DEADLINE_EXPIRED
+                    message: Срок предъявления претензии по контракту истёк
+                T4_no_response:
+                  summary: T4 — ответ поставщика не прикреплён
+                  value:
+                    code: SUPPLIER_RESPONSE_MISSING
+                    message: Нельзя передать на согласование — ответ поставщика не прикреплён
+                T7_no_compensation:
+                  summary: T7 — компенсация не получена
+                  value:
+                    code: COMPENSATION_NOT_RECEIVED
+                    message: Нельзя закрыть дело — компенсация не получена
         '500':
-          description: Внутренняя ошибка сервера
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/responses/InternalServerError'
+          $ref: '#/components/responses/InternalServerError'
 
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
   parameters:
     ClaimId:
       name: claim_id
@@ -132,30 +221,6 @@ components:
           - CLM-2026-123457
 
   schemas:
-    ClaimStatus:
-      type: object
-      required:
-        - status
-      properties:
-        status_id:
-          type: string
-        status:
-          type: string
-          enum:
-            - CREATED
-            - IN_PROGRESS
-            - SENT
-            - RESPONSE_RECEIVED
-            - UNDER_APPROVAL
-            - AGREED
-            - DISPUTE
-            - CLOSED
-          description: Статус претензионного дела
-        changedAt:
-          type: string
-          format: date-time
-          example: '2026-10-10T15:00:00+01:00'
-
     Error:
       type: object
       description: Формат ошибки
@@ -164,7 +229,20 @@ components:
         - message
       properties:
         code:
-          type: integer
+          type: string
+          description: Машиночитаемый код ошибки — по нему фронтенд выбирает сообщение
+          enum:
+            - VALIDATION_ERROR           # 400
+            - UNAUTHORIZED               # 401
+            - ROLE_NOT_ALLOWED           # 403
+            - CLAIM_NOT_FOUND            # 404
+            - TRANSITION_NOT_ALLOWED     # 409
+            - EVIDENCE_PACK_INCOMPLETE   # 422, T2
+            - CLAIM_LETTER_INCOMPLETE    # 422, T2
+            - CLAIM_DEADLINE_EXPIRED     # 422, T2
+            - SUPPLIER_RESPONSE_MISSING  # 422, T4
+            - COMPENSATION_NOT_RECEIVED  # 422, T7
+            - INTERNAL_ERROR             # 500
         message:
           type: string
           description: Описание ошибки для пользователя
@@ -189,10 +267,10 @@ components:
         status_name:
           type: string
           description: Название статуса
-          example:
+          examples:
             - Создан
         status_code:
-          $ref: '#/components/schema/StatusCode'
+          $ref: '#/components/schemas/StatusCode'
 
     ChangeStatusRequest:
       type: object
@@ -247,9 +325,15 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+          example:
+            code: UNAUTHORIZED
+            message: Отсутствует или недействителен токен авторизации
     InternalServerError:
       description: Внутренняя ошибка сервера
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+          example:
+            code: INTERNAL_ERROR
+            message: Внутренняя ошибка сервера
